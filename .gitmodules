@@ -3,36 +3,36 @@
 	url = https://github.com/ActivityWatch/aw-core.git
 [submodule "aw-client"]
 	path = aw-client
-	url = https://github.com/brazerZa/aw-client.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-client.git
+	branch = master
 [submodule "aw-server"]
 	path = aw-server
-	url = https://github.com/brazerZa/aw-server.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-server.git
+	branch = master
 [submodule "aw-qt"]
 	path = aw-qt
-	url = https://github.com/brazerZa/aw-qt.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-qt.git
+	branch = master
 [submodule "aw-server-rust"]
 	path = aw-server-rust
-	url = https://github.com/brazerZa/aw-server-rust.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-server-rust.git
+	branch = master
 [submodule "aw-notify"]
 	path = aw-notify
-	url = https://github.com/brazerZa/aw-notify.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-notify.git
+	branch = master
 [submodule "aw-watcher-input"]
 	path = aw-watcher-input
-	url = https://github.com/brazerZa/aw-watcher-input.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-watcher-input.git
+	branch = master
 [submodule "aw-watcher-afk"]
 	path = aw-watcher-afk
-	url = https://github.com/brazerZa/aw-watcher-afk.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-watcher-afk.git
+	branch = master
 [submodule "aw-watcher-window"]
 	path = aw-watcher-window
-	url = https://github.com/brazerZa/aw-watcher-window.git
-	branch = custom-headers
+	url = https://github.com/stoep-labs/aw-watcher-window.git
+	branch = master
 [submodule "aw-tauri"]
 	path = aw-tauri
 	url = https://github.com/activitywatch/aw-tauri

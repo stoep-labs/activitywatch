@@ -1,0 +1,81 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Build"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-aw
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: [self-hosted, Linux, X64, stoep]
+    env:
+      REGISTRY: stoep.co.uk:5000
+      DOCKERDIR: /home/mserver/docker
+      STOEP_ENV: /home/mserver/docker/.env
+      IMAGE_TAG: latest
+      DOCKER_BUILDKIT: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Build artifact (workflow_run)
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: builds-ubuntu-24.04-py3.9
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .
+
+      - name: Download latest Build artifact (manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          rm -f activitywatch-*.zip activitywatch-*.AppImage activitywatch-*.deb
+          RUN_ID="$(gh run list --workflow=build.yml --branch=master --status=success --limit=1 --json databaseId --jq '.[0].databaseId')"
+          if [ -z "${RUN_ID}" ] || [ "${RUN_ID}" = "null" ]; then
+            echo "ERROR: no successful Build run on master" >&2
+            exit 1
+          fi
+          echo "Downloading builds-ubuntu-24.04-py3.9 from run ${RUN_ID}"
+          gh run download "${RUN_ID}" -n builds-ubuntu-24.04-py3.9
+
+      - name: Flatten artifact layout
+        run: |
+          set -euo pipefail
+          # download-artifact may nest files; ensure zip is at repo root for Dockerfile COPY
+          shopt -s nullglob globstar
+          found=(activitywatch-*.zip **/activitywatch-*.zip)
+          shopt -u nullglob globstar
+          if [ "${#found[@]}" -eq 0 ]; then
+            echo "ERROR: activitywatch-*.zip not found after download" >&2
+            find . -maxdepth 3 -type f | head -50
+            exit 1
+          fi
+          for f in "${found[@]}"; do
+            if [ "$(dirname "$f")" != "." ]; then
+              mv -f "$f" .
+            fi
+          done
+          ls -la activitywatch-*.zip
+
+      - name: Deploy to stoep
+        run: bash scripts/deploy-stoep.sh
