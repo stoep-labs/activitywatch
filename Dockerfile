@@ -15,4 +15,4 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 5600
-CMD ["/app/activitywatch/aw-server-rust/aw-server-rust", "--host", "0.0.0.0"]
+CMD ["/app/activitywatch/aw-server-rust/aw-server-rust", "--host", "0.0.0.0", "--profile", "default"]
