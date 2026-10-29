@@ -33,7 +33,7 @@
 
 <p align="center">
   <a href="https://github.com/ActivityWatch/activitywatch/actions?query=branch%3Amaster">
-    <img title="Build Status GitHub" src="https://github.com/ActivityWatch/activitywatch/workflows/Build/badge.svg?branch=master" />
+    <img title="Build Status GitHub" src="https://github.com/ActivityWatch/activitywatch/actions/workflows/release.yml/badge.svg?branch=master" />
   </a>
   <a href="https://ci.appveyor.com/project/ErikBjare/activitywatch">
     <img title="Build Status Appveyor" src="https://ci.appveyor.com/api/projects/status/vm7g9sdfi2vgix6n?svg=true" />
@@ -57,7 +57,7 @@
   <br>
 
   <a href="https://activitywatch.net/donate/">
-    <img title="Donated" src="https://img.shields.io/badge/budget-%24201%2Fmo%20from%2040%20supporters-orange.svg" />
+    <img title="Donated" src="https://img.shields.io/badge/budget-~%24275%2Fmo%20from%2044%20supporters-orange.svg" />
   </a>
   <a href="https://doi.org/10.5281/zenodo.4957165">
     <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4957165.svg" />
@@ -103,10 +103,35 @@ It is up to you as user to collect as much as you want, or as little as you want
 
 ### Screenshots
 
-<span><img src="https://activitywatch.net/img/screenshots/screenshot-v0.9.3-activity.png"   width="45%"></span>
-<span><img src="https://activitywatch.net/img/screenshots/screenshot-v0.8.0b9-timeline.png" width="50%"></span>
+<span><img src="https://activitywatch.net/img/screenshots/v0.14.0/activity-day-full.png" width="45%" alt="Activity view: a day across three devices"></span>
+<span><img src="https://activitywatch.net/img/screenshots/v0.14.0/timeline.png" width="50%" alt="Timeline view: window, browser and AFK events from three devices"></span>
 
-You can find more (and newer) screenshots on [the website](https://activitywatch.net/screenshots/).
+Screenshots of v0.14.0 with demo data (generated with `make screenshots`). Find more, including dark mode, Android, and how it has evolved over the versions, on [the website](https://activitywatch.net/screenshots/).
+
+## How to cite ActivityWatch
+
+If you use ActivityWatch in your research, please cite it. This helps us track
+academic impact and keeps the project sustainable. The canonical reference is
+the Zenodo DOI:
+
+**DOI: [10.5281/zenodo.4957165](https://doi.org/10.5281/zenodo.4957165)**
+
+Ready-to-paste BibTeX for your methods section:
+
+```bibtex
+@software{activitywatch,
+  author       = {Bjäreholt, Erik and Bjäreholt, Johan},
+  title        = {ActivityWatch},
+  year         = {2026},
+  publisher    = {Zenodo},
+  version      = {0.14.0},
+  doi          = {10.5281/zenodo.4957165},
+  url          = {https://github.com/ActivityWatch/activitywatch}
+}
+```
+
+If you publish a paper that uses ActivityWatch, we would love to hear about it —
+please let us know on [the forum](https://forum.activitywatch.net/).
 
 
 ## Installation & Usage

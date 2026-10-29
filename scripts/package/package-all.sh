@@ -29,8 +29,14 @@ function get_platform() {
     echo $_platform;
 }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 function get_version() {
-    $(dirname "$0")/getversion.sh;
+    "$SCRIPT_DIR/getversion.sh";
+}
+
+function get_version_no_prefix() {
+    "$SCRIPT_DIR/getversion.sh" --strip-v;
 }
 
 function get_arch() {
@@ -40,18 +46,44 @@ function get_arch() {
 
 platform=$(get_platform)
 version=$(get_version)
+version_no_prefix=$(get_version_no_prefix)
 arch=$(get_arch)
-echo "Platform: $platform, arch: $arch, version: $version"
+# Research tags are suffixed (e.g. v0.14.0b3-research), but the edition
+# belongs in its own filename token, not in the version part:
+#   activitywatch[-tauri][-research]-<version>-<os>-<arch>[-setup].<ext>
+version="${version%-research}"
+version_no_prefix="${version_no_prefix%-research}"
+build_suffix=""
+if [[ $TAURI_BUILD == "true" ]]; then
+    build_suffix="-tauri"
+fi
+if [[ $AW_RESEARCH_EDITION == "true" ]]; then
+    build_suffix="${build_suffix}-research"
+fi
 
-# For Tauri Linux builds, include helper scripts and README
+echo "========================================"
+echo "Build Version Information"
+echo "========================================"
+echo "Platform:       $platform"
+echo "Arch:           $arch"
+echo "Version (with v):  $version"
+echo "Version (no v):     $version_no_prefix"
+echo "Tauri build:    ${TAURI_BUILD:-false}"
+echo "========================================"
+echo
+
+# For Tauri Linux builds, include the README. awatcher is bundled inside the
+# AppImage/deb/rpm (staged into aw-tauri's modules/ by the Makefile), so the
+# loose copy is left out of the zip.
 if [[ $platform == "linux" && $TAURI_BUILD == "true" ]]; then
-    cp scripts/package/README.txt scripts/package/move-to-aw-modules.sh dist/activitywatch/
+    cp scripts/package/README.txt dist/activitywatch/
+    rm -rf dist/activitywatch/awatcher
 fi
 
 function build_zip() {
     echo "Zipping executables..."
     pushd dist;
-    filename="activitywatch-${version}-${platform}-${arch}.zip"
+    filename="activitywatch${build_suffix}-${version}-${platform}-${arch}.zip"
     echo "Name of package will be: $filename"
 
     if [[ $platform == "windows"* ]]; then
@@ -64,7 +96,7 @@ function build_zip() {
 }
 
 function build_setup() {
-    filename="activitywatch-${version}-${platform}-${arch}-setup.exe"
+    filename="activitywatch${build_suffix}-${version}-${platform}-${arch}-setup.exe"
     echo "Name of package will be: $filename"
 
     innosetupdir="/c/Program Files (x86)/Inno Setup 6"
@@ -73,14 +105,12 @@ function build_setup() {
         exit 1
     fi
 
-    # Windows installer version should not include 'v' prefix, see: https://github.com/microsoft/winget-pkgs/pull/17564
-    version_no_prefix="$(echo $version | sed -e 's/^v//')"
     if [[ $TAURI_BUILD == "true" ]]; then
         env AW_VERSION=$version_no_prefix "$innosetupdir/iscc.exe" scripts/package/aw-tauri.iss
     else
         env AW_VERSION=$version_no_prefix "$innosetupdir/iscc.exe" scripts/package/activitywatch-setup.iss
     fi
-    mv dist/activitywatch-setup.exe dist/$filename
+    "$SCRIPT_DIR/collect-setup.sh" "$filename"
     echo "Setup built!"
 }
 
@@ -94,4 +124,3 @@ echo "-------------------------------------"
 echo "Contents of ./dist"
 ls -l dist
 echo "-------------------------------------"
-

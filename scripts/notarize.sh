@@ -3,20 +3,41 @@
 applemail=$APPLE_EMAIL # Email address used for Apple ID
 password=$APPLE_PASSWORD # See apps-specific password https://support.apple.com/en-us/HT204397
 teamid=$APPLE_TEAMID # Team idenitifer (if single developer, then set to developer identifier)
-keychain_profile="activitywatch-$APPLE_PERSONALID"  # name of the keychain profile to use
+# Name of the keychain profile to use. Must not contain spaces: APPLE_PERSONALID
+# holds the full codesign identity ("Developer ID Application: ..."), so use the
+# team ID instead.
+keychain_profile="activitywatch-$APPLE_TEAMID"
 bundleid=net.activitywatch.ActivityWatch # Match aw.spec
 app=dist/ActivityWatch.app
 dmg=dist/ActivityWatch.dmg
 
-# XCode >= 13 
+# XCode >= 13
 run_notarytool() {
     dist=$1
     # Setup the credentials for notarization
-    xcrun notarytool store-credentials $keychain_profile --apple-id $applemail --team-id $teamid --password $password
-    # Notarize and wait
+    xcrun notarytool store-credentials "$keychain_profile" --apple-id "$applemail" --team-id "$teamid" --password "$password"
+    # Notarize and wait; tee to a temp file so output streams in real-time
+    # while we can still inspect it afterward for failure details.
     echo "Notarization: starting for $dist"
     echo "Notarization: in progress for $dist"
-    xcrun notarytool submit $dist --keychain-profile $keychain_profile --wait
+    tmpfile=$(mktemp)
+    xcrun notarytool submit "$dist" --keychain-profile "$keychain_profile" --wait 2>&1 | tee "$tmpfile"
+    submission_exit=${PIPESTATUS[0]}
+    submission_output=$(cat "$tmpfile")
+    rm -f "$tmpfile"
+    # On failure, retrieve the detailed rejection log from Apple's server.
+    # This avoids having to run 'notarytool log' manually after the fact.
+    if echo "$submission_output" | grep -q "status: Invalid"; then
+        uuid=$(echo "$submission_output" | grep '^[[:space:]]*id:' | head -1 | awk '{print $NF}')
+        if [ -n "$uuid" ]; then
+            echo ""
+            echo "=== Notarization rejected (status: Invalid) — fetching rejection log for $uuid ==="
+            xcrun notarytool log "$uuid" --keychain-profile "$keychain_profile" 2>&1 || true
+            echo "=== End of rejection log ==="
+        fi
+        return 1
+    fi
+    return $submission_exit
 }
 
 # XCode < 13 
@@ -53,12 +74,13 @@ xcrun notarytool >/dev/null 2>&1
 if [ $? -eq 0 ]; then
     echo "+ Found notarytool"
     notarization_method=run_notarytool
-fi
-# Fallbqck to altool
-output=xcrun altool >/dev/null 2>&1
-if [ $? -eq 0 ]; then
-    echo "+ Found altool"
-    notarization_method=run_altool
+else
+    # Fallback to altool
+    xcrun -f altool >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "+ Found altool"
+        notarization_method=run_altool
+    fi
 fi
 
 if [ $notarization_method = "exit" ]; then
@@ -66,21 +88,21 @@ if [ $notarization_method = "exit" ]; then
     $notarization_method
 fi
 
-if test -f "$app"; then
+if test -d "$app"; then
     echo "Notarizing: $app"
     zip=$app.zip
     # Turn the app into a zip file that notarization will accept
-    ditto -c -k --keepParent $app $zip
-    $notarization_method $zip
-    run_stapler $app
+    ditto -c -k --keepParent "$app" "$zip"
+    $notarization_method "$zip"
+    run_stapler "$app"
 else
-    echo "Skipping: $app"
+    echo "Skipping: $app (expected .app bundle directory)"
 fi
 
 if test -f "$dmg"; then
     echo "Notarizing: $dmg"
-    $notarization_method $dmg
-    run_stapler $dmg
+    $notarization_method "$dmg"
+    run_stapler "$dmg"
 else
     echo "Skipping: $dmg"
 fi

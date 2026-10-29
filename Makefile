@@ -7,16 +7,17 @@
 #
 # We recommend creating and activating a Python virtualenv before building.
 # Instructions on how to do this can be found in the guide linked above.
-.PHONY: build install test clean clean_all
+.PHONY: build install test test-query-parity clean clean_all update-submodules sync-tauri-server screenshots
 
 SHELL := /usr/bin/env bash
 
 OS := $(shell uname -s)
 
 ifeq ($(TAURI_BUILD),true)
-	SUBMODULES := aw-core aw-client aw-server aw-server-rust aw-watcher-afk aw-watcher-window aw-tauri
-	# Include awatcher on Linux (Wayland-compatible window watcher)
+	SUBMODULES := aw-core aw-client aw-server aw-server-rust aw-watcher-afk aw-watcher-window
 	ifeq ($(OS),Linux)
+		# awatcher must be built before aw-tauri so binaries can be staged into
+		# src-tauri/modules/ before the Tauri bundle step runs.
 		SUBMODULES := $(SUBMODULES) awatcher
 	endif
 else
@@ -30,6 +31,10 @@ endif
 # Include extras if AW_EXTRAS is true
 ifeq ($(AW_EXTRAS),true)
 	SUBMODULES := $(SUBMODULES) aw-notify aw-watcher-input
+endif
+# aw-tauri goes last, so every module it bundles (awatcher, aw-notify) is built first.
+ifeq ($(TAURI_BUILD),true)
+	SUBMODULES := $(SUBMODULES) aw-tauri
 endif
 
 # A function that checks if a target exists in a Makefile
@@ -67,7 +72,46 @@ build: aw-core/.git
 #	needed due to https://github.com/pypa/setuptools/issues/1963
 #	would ordinarily be specified in pyproject.toml, but is not respected due to https://github.com/pypa/setuptools/issues/1963
 	pip install 'setuptools>49.1.1'
+# Before building aw-tauri, stage aw-sync + awatcher (and aw-notify with
+# AW_EXTRAS) into src-tauri/modules/ on Linux; aw-tauri's Makefile bundles them
+# into the deb/rpm/AppImage when present, as the macOS and Windows Tauri builds
+# already ship them. The dir is wiped first so stale binaries can't leak into a
+# non-Linux or SKIP_SERVER_RUST bundle.
+# Old Tauri bundles are dropped too: a cache-restored target/ can hold a
+# previous version's .deb next to the new one, and aw-tauri's `package` then
+# fails copying `bundle/deb/*.deb` onto a single file.
 	for module in $(SUBMODULES); do \
+		if [ "$(TAURI_BUILD)" = "true" ] && [ "$$module" = "aw-tauri" ]; then \
+			rm -rf aw-tauri/src-tauri/modules || exit 1; \
+			rm -rf aw-tauri/src-tauri/target/release/bundle aw-tauri/src-tauri/target/debug/bundle || exit 1; \
+			if [ "$(OS)" = "Linux" ]; then \
+				echo "Staging bundled modules into aw-tauri/src-tauri/modules/"; \
+				mkdir -p aw-tauri/src-tauri/modules || exit 1; \
+				if [ -f "aw-server-rust/target/$(targetdir)/aw-sync" ]; then \
+					cp aw-server-rust/target/$(targetdir)/aw-sync aw-tauri/src-tauri/modules/aw-sync || exit 1; \
+					chmod +x aw-tauri/src-tauri/modules/aw-sync || exit 1; \
+				elif [ "$(SKIP_SERVER_RUST)" != "true" ]; then \
+					echo "Error: aw-sync binary not found at aw-server-rust/target/$(targetdir)/aw-sync" >&2; \
+					exit 1; \
+				fi; \
+				if [ -f "awatcher/target/$(targetdir)/awatcher" ]; then \
+					cp awatcher/target/$(targetdir)/awatcher aw-tauri/src-tauri/modules/aw-awatcher || exit 1; \
+					chmod +x aw-tauri/src-tauri/modules/aw-awatcher || exit 1; \
+				else \
+					echo "Error: awatcher binary not found at awatcher/target/$(targetdir)/awatcher" >&2; \
+					exit 1; \
+				fi; \
+				if [ "$(AW_EXTRAS)" = "true" ]; then \
+					if [ -f "aw-notify/target/$(targetdir)/aw-notify" ]; then \
+						cp aw-notify/target/$(targetdir)/aw-notify aw-tauri/src-tauri/modules/aw-notify || exit 1; \
+						chmod +x aw-tauri/src-tauri/modules/aw-notify || exit 1; \
+					else \
+						echo "Error: aw-notify binary not found at aw-notify/target/$(targetdir)/aw-notify" >&2; \
+						exit 1; \
+					fi; \
+				fi; \
+			fi; \
+		fi; \
 		echo "Building $$module"; \
 		if [ "$$module" = "aw-server-rust" ] && [ "$(TAURI_BUILD)" = "true" ]; then \
 			make --directory=$$module aw-sync SKIP_WEBUI=$(SKIP_WEBUI) || { echo "Error in $$module aw-sync"; exit 2; }; \
@@ -80,8 +124,6 @@ build: aw-core/.git
 	make --directory=aw-core build
 #	Needed to ensure that the server has the correct version set
 	python -c "import aw_server; print(aw_server.__version__)"
-#	Needed to ensure that aw-qt has the correct version set
-	python -c "import aw_qt; print(aw_qt.__version__)"
 
 
 # Install
@@ -106,6 +148,17 @@ update:
 	git submodule update --init --recursive
 	make build
 
+# Move direct submodules to their latest upstream commits. aw-tauri's lockfile
+# is authoritative for the server revision, so align the top-level server
+# submodule with it after updating everything else.
+update-submodules:
+	git submodule update --init --remote
+	git submodule foreach 'git submodule update --init --recursive'
+	$(MAKE) sync-tauri-server
+
+sync-tauri-server:
+	python3 scripts/check_tauri_server.py --sync
+
 
 lint:
 	@for module in $(LINTABLES); do \
@@ -124,7 +177,7 @@ typecheck:
 #
 # Uninstalls all the Python modules.
 uninstall:
-	modules=$$(pip3 list --format=legacy | grep 'aw-' | grep -o '^aw-[^ ]*'); \
+	modules=$$(pip3 list --format=freeze | grep '^aw-' | cut -d'=' -f1); \
 	for module in $$modules; do \
 		echo "Uninstalling $$module"; \
 		pip3 uninstall -y $$module; \
@@ -133,8 +186,12 @@ uninstall:
 test:
 	@for module in $(TESTABLES); do \
 		echo "Running tests for $$module"; \
-		poetry run make -C $$module test || { echo "Error in $$module tests"; exit 2; }; \
-    done
+		if [ -f "$$module/pyproject.toml" ]; then \
+			(cd $$module && poetry run make test) || { echo "Error in $$module tests"; exit 2; }; \
+		else \
+			make -C $$module test || { echo "Error in $$module tests"; exit 2; }; \
+		fi; \
+	done
 
 test-integration:
 	# TODO: Move "integration tests" to aw-client
@@ -143,6 +200,16 @@ test-integration:
 	# aw-server-python
 	@echo "== Integration testing aw-server =="
 	@pytest ./scripts/tests/integration_tests.py ./aw-server/tests/ -v
+
+# Compares query results of aw-server (Python) and aw-server-rust on identical
+# events. See scripts/tests/query_parity/README.md.
+test-query-parity:
+	python3 -m pytest scripts/tests/query_parity -q -rfX -p no:cacheprovider
+
+# Marketing screenshots of the web UI, from a throwaway aw-server-rust seeded with demo data.
+# Output in dist/screenshots/. Pass options with ARGS, e.g. `make screenshots ARGS="--theme dark"`.
+screenshots:
+	uv run scripts/screenshots.py --build $(ARGS)
 
 %/.git:
 	git submodule update --init --recursive
@@ -169,17 +236,31 @@ aw-qt/media/logo/logo.icns:
 	rm -R build/MyIcon.iconset
 	mv build/MyIcon.icns aw-qt/media/logo/logo.icns
 
-dist/ActivityWatch.app: aw-qt/media/logo/logo.icns
+# Stem of the macOS .app / .dmg. Research Edition patches APP_BUNDLE so the
+# on-disk bundle does not collide with /Applications/ActivityWatch.app.
+APP_BUNDLE ?= ActivityWatch
+
+dist/$(APP_BUNDLE).app: aw-qt/media/logo/logo.icns
 ifeq ($(TAURI_BUILD),true)
 	scripts/package/build_app_tauri.sh
 else
 	pyinstaller --clean --noconfirm aw.spec
 endif
 
-dist/ActivityWatch.dmg: dist/ActivityWatch.app
+dist/$(APP_BUNDLE).dmg: dist/$(APP_BUNDLE).app
 	# NOTE: This does not codesign the dmg, that is done in the CI config
 	pip install dmgbuild
-	dmgbuild -s scripts/package/dmgbuild-settings.py -D app=dist/ActivityWatch.app "ActivityWatch" dist/ActivityWatch.dmg
+	@for attempt in 1 2 3; do \
+		rm -f dist/$(APP_BUNDLE).dmg; \
+		if dmgbuild -s scripts/package/dmgbuild-settings.py -D app=dist/$(APP_BUNDLE).app "$(APP_BUNDLE)" dist/$(APP_BUNDLE).dmg; then \
+			exit 0; \
+		fi; \
+		if [ $$attempt -eq 3 ]; then \
+			exit 1; \
+		fi; \
+		echo "dmgbuild attempt $$attempt failed; retrying after macOS releases the disk image" >&2; \
+		sleep $$((5 * attempt)); \
+	done
 
 dist/notarize:
 	./scripts/notarize.sh
@@ -188,8 +269,8 @@ package:
 	rm -rf dist
 	mkdir -p dist/activitywatch
 	for dir in $(PACKAGEABLES); do \
-		make --directory=$$dir package; \
-		cp -r $$dir/dist/$$dir dist/activitywatch; \
+		make --directory=$$dir package || { echo "Error in $$dir package"; exit 2; }; \
+		cp -r $$dir/dist/$$dir dist/activitywatch || exit 2; \
 	done
 ifeq ($(TAURI_BUILD),true)
 # Copy aw-sync binary for Tauri builds
@@ -197,13 +278,35 @@ ifeq ($(TAURI_BUILD),true)
 	cp aw-server-rust/target/$(targetdir)/aw-sync dist/activitywatch/aw-server-rust/aw-sync
 else
 # Move aw-qt to the root of the dist folder
-	mv dist/activitywatch/aw-qt aw-qt-tmp
-	mv aw-qt-tmp/* dist/activitywatch
-	rmdir aw-qt-tmp
+# Rename first to avoid cp conflict: the aw-qt binary inside the dir has the
+# same name as the source directory, so cp -a src/. dest/ would fail trying
+# to overwrite the directory with the binary of the same name.
+	mv dist/activitywatch/aw-qt dist/aw-qt-tmp
+	cp -a dist/aw-qt-tmp/. dist/activitywatch/
+	rm -rf dist/aw-qt-tmp
 endif
 # Remove problem-causing binaries
 	rm -f dist/activitywatch/libdrm.so.2       # see: https://github.com/ActivityWatch/activitywatch/issues/161
 	rm -f dist/activitywatch/libharfbuzz.so.0  # see: https://github.com/ActivityWatch/activitywatch/issues/660#issuecomment-959889230
+ifeq ($(shell uname),Linux)
+# Libraries that must match the host ABI, never bundled. PyInstaller copies
+# whatever the build host has — glib 2.72 on the ubuntu-22.04 runner, glib 2.56
+# in the manylinux_2_28 image — and the bundled copies then shadow the user's
+# newer system libraries. All portable Linux packages are built from this
+# directory, so remove them here and use the distro library instead.
+#   - libwayland-client: libQt6WaylandClient needs wl_proxy_marshal_flags
+#     (libwayland >= 1.20) and otherwise crashes on startup with
+#     "undefined symbol: wl_proxy_marshal_flags". See:
+#     https://github.com/ActivityWatch/activitywatch/issues/939
+#     and https://github.com/ActivityWatch/activitywatch/issues/1105
+#   - libgio/libglib/libgobject: a bundled libgio cannot read the host's
+#     GSettings schemas. See:
+#     https://github.com/ActivityWatch/activitywatch/issues/710
+	find dist/activitywatch -maxdepth 1 \
+		\( -name 'libwayland-client.so*' -o -name 'libwayland-cursor.so*' \
+		-o -name 'libwayland-egl.so*' -o -name 'libgio-2.0.so*' \
+		-o -name 'libglib-2.0.so*' -o -name 'libgobject-2.0.so*' \) -delete
+endif
 # These should be provided by the distro itself
 # Had to be removed due to otherwise causing the error:
 #   aw-qt: symbol lookup error: /opt/activitywatch/libQt5XcbQpa.so.5: undefined symbol: FT_Get_Font_Format

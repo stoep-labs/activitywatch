@@ -37,7 +37,7 @@ jobs:
         if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
-          name: builds-ubuntu-24.04-py3.9
+          name: builds-ubuntu-22.04-py3.9
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: .
@@ -55,8 +55,8 @@ jobs:
             echo "ERROR: no successful Build run on master" >&2
             exit 1
           fi
-          echo "Downloading builds-ubuntu-24.04-py3.9 from run ${RUN_ID}"
-          gh run download "${RUN_ID}" -n builds-ubuntu-24.04-py3.9
+          echo "Downloading builds-ubuntu-22.04-py3.9 from run ${RUN_ID}"
+          gh run download "${RUN_ID}" -n builds-ubuntu-22.04-py3.9
 
       - name: Flatten artifact layout
         run: |

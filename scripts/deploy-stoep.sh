@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build, push, and deploy ActivityWatch (aw-server-rust) on stoep via the umbrella compose stack.
 #
-# Expects activitywatch-*.zip in REPO_ROOT (from CI artifact builds-ubuntu-24.04-py3.9).
+# Expects activitywatch-*.zip in REPO_ROOT (from CI artifact builds-ubuntu-22.04-py3.9).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,7 +26,7 @@ ZIPS=("${REPO_ROOT}"/activitywatch-*.zip)
 shopt -u nullglob
 if [ "${#ZIPS[@]}" -eq 0 ]; then
   echo "ERROR: no activitywatch-*.zip in ${REPO_ROOT}" >&2
-  echo "Download the builds-ubuntu-24.04-py3.9 artifact first." >&2
+  echo "Download the builds-ubuntu-22.04-py3.9 artifact first." >&2
   exit 1
 fi
 if [ "${#ZIPS[@]}" -gt 1 ]; then

@@ -3,7 +3,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Pre-built Linux zip from the GitHub Actions Build workflow artifact
-# (builds-ubuntu-24.04-py3.9 → activitywatch-*.zip).
+# (builds-ubuntu-22.04-py3.9 → activitywatch-*.zip).
 COPY activitywatch-*.zip /tmp/aw.zip
 
 RUN apt-get update \
@@ -15,4 +15,4 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 5600
-CMD ["/app/activitywatch/aw-server-rust/aw-server-rust", "--host", "0.0.0.0"]
+CMD ["/app/activitywatch/aw-server-rust/aw-server-rust", "--host", "0.0.0.0", "--profile", "default"]
