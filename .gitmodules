@@ -3,25 +3,32 @@
 	url = https://github.com/ActivityWatch/aw-core.git
 [submodule "aw-client"]
 	path = aw-client
-	url = https://github.com/ActivityWatch/aw-client.git
+	url = https://github.com/stoep-labs/aw-client.git
+	branch = upgrade-0.15
 [submodule "aw-server"]
 	path = aw-server
-	url = https://github.com/ActivityWatch/aw-server.git
+	url = https://github.com/stoep-labs/aw-server.git
+	branch = upgrade-0.15
 [submodule "aw-watcher-afk"]
 	path = aw-watcher-afk
-	url = https://github.com/ActivityWatch/aw-watcher-afk.git
+	url = https://github.com/stoep-labs/aw-watcher-afk.git
+	branch = upgrade-0.15
 [submodule "aw-qt"]
 	path = aw-qt
-	url = https://github.com/ActivityWatch/aw-qt.git
+	url = https://github.com/stoep-labs/aw-qt.git
+	branch = upgrade-0.15
 [submodule "aw-watcher-window"]
 	path = aw-watcher-window
-	url = https://github.com/ActivityWatch/aw-watcher-window.git
+	url = https://github.com/stoep-labs/aw-watcher-window.git
+	branch = upgrade-0.15
 [submodule "aw-server-rust"]
 	path = aw-server-rust
-	url = https://github.com/ActivityWatch/aw-server-rust.git
+	url = https://github.com/stoep-labs/aw-server-rust.git
+	branch = upgrade-0.15
 [submodule "aw-watcher-input"]
 	path = aw-watcher-input
-	url = https://github.com/ActivityWatch/aw-watcher-input.git
+	url = https://github.com/stoep-labs/aw-watcher-input.git
+	branch = upgrade-0.15
 [submodule "aw-tauri"]
 	path = aw-tauri
 	url = https://github.com/activitywatch/aw-tauri

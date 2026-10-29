@@ -1,0 +1,171 @@
+name: Build
+
+# Stoep/Malachi build: Linux (server bundle for the Docker image) and Windows
+# (client installer). Derived from upstream v0.14.1's build-qt job, without the
+# release tagging, macOS signing and research-edition steps.
+# deploy.yml waits for this workflow's name ("Build") and the
+# builds-ubuntu-22.04-py3.9 artifact.
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+      - v*
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}, py-${{ matrix.python_version }}, node-${{ matrix.node_version }}
+    runs-on: ${{ matrix.os }}
+    env:
+      AW_EXTRAS: true
+      # All subprojects share one virtualenv; parallel installs race on it.
+      POETRY_INSTALLER_PARALLEL: "false"
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux is built on the oldest supported runner to keep the glibc
+        # baseline compatible with the debian:bookworm image.
+        os: [ubuntu-22.04, windows-latest]
+        python_version: [3.9]
+        node_version: [22]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Set RELEASE
+        run: |
+          echo "RELEASE=${{ startsWith(github.ref_name, 'v') || github.ref_name == 'master' }}" >> "$GITHUB_ENV"
+
+      - name: Set tag metadata
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "VERSION_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Determine and output version
+        run: |
+          VERSION_WITH_V=$(bash scripts/package/getversion.sh)
+          echo "VERSION_WITH_V=${VERSION_WITH_V}" >> "$GITHUB_ENV"
+          echo "VERSION_NO_V=${VERSION_WITH_V#v}" >> "$GITHUB_ENV"
+          echo "Build version: ${VERSION_WITH_V}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node_version }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        id: toolchain
+        with:
+          toolchain: stable
+
+      - name: Cache node_modules
+        uses: actions/cache@v6
+        with:
+          path: aw-server-rust/aw-webui/node_modules
+          key: ${{ matrix.os }}-node_modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ matrix.os }}-node_modules-
+
+      - name: Cache cargo build
+        uses: actions/cache@v6
+        env:
+          cache-name: cargo-build-target
+        with:
+          path: aw-server-rust/target
+          key: ${{ matrix.os }}-${{ env.cache-name }}-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.os }}-${{ env.cache-name }}-${{ steps.toolchain.outputs.rustc_hash }}-
+
+      - name: Install APT dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            appstream \
+            qt5-qmake \
+            qtbase5-dev \
+            qtwayland5 \
+            libqt5x11extras5 \
+            libfontconfig1 \
+            libxcb1 \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxfixes-dev \
+            libxft-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxrender-dev
+
+      - name: Install dependencies
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            choco install innosetup
+          fi
+          pip3 install poetry==2.2.1
+
+      - name: Build
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate || source venv/Scripts/activate
+          poetry install
+          make build
+          pip freeze
+
+      - name: Verify bundled client defaults
+        run: |
+          source venv/bin/activate || source venv/Scripts/activate
+          python -c "from aw_client.config import default_config as c; assert 'aw.stoep.co.uk' in c and 'https' in c, c; print('aw-client defaults OK')"
+
+      - name: Run tests
+        run: |
+          source venv/bin/activate || source venv/Scripts/activate
+          make test
+
+      # Integration tests don't work on Windows.
+      - name: Run integration tests
+        if: runner.os != 'Windows'
+        run: |
+          source venv/bin/activate || source venv/Scripts/activate
+          make test-integration
+
+      - name: Package
+        run: |
+          source venv/bin/activate || source venv/Scripts/activate
+          poetry install  # run again to ensure we have the correct version of PyInstaller
+          make package
+
+      - name: Host-ABI gate - verify no host system libraries are bundled
+        if: startsWith(runner.os, 'linux')
+        run: bash scripts/package/host-abi-gate.sh dist/activitywatch
+
+      - name: Package AppImage
+        if: startsWith(runner.os, 'linux')
+        run: ./scripts/package/package-appimage.sh
+
+      - name: Package deb
+        if: startsWith(runner.os, 'linux')
+        run: ./scripts/package/package-deb.sh
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: builds-${{ matrix.os }}-py${{ matrix.python_version }}
+          path: dist/activitywatch-*.*
