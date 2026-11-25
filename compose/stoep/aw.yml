@@ -23,14 +23,31 @@ services:
       - "traefik.http.routers.aw-api-rtr.rule=Host(`aw.$DOMAINNAME_HS`) && PathPrefix(`/api`)"
       - "traefik.http.routers.aw-api-rtr.priority=120"
       - "traefik.http.routers.aw-api-rtr.service=aw-svc"
-      # Public leaderboard — no OAuth (priority 110)
+      # Public leaderboard — no OAuth (priority 110). Served by the aw-leaderboard nginx below (patched page)
       - "traefik.http.routers.aw-leaderboard-rtr.entrypoints=websecure"
       - "traefik.http.routers.aw-leaderboard-rtr.rule=Host(`aw.$DOMAINNAME_HS`) && PathPrefix(`/static/leaderboard`)"
       - "traefik.http.routers.aw-leaderboard-rtr.priority=110"
-      - "traefik.http.routers.aw-leaderboard-rtr.service=aw-svc"
+      - "traefik.http.routers.aw-leaderboard-rtr.service=aw-leaderboard-svc"
       # Main web UI — behind OAuth (priority 99)
       - "traefik.http.routers.aw-rtr.entrypoints=websecure"
       - "traefik.http.routers.aw-rtr.rule=Host(`aw.$DOMAINNAME_HS`)"
       - "traefik.http.routers.aw-rtr.priority=99"
       - "traefik.http.routers.aw-rtr.middlewares=chain-oauth@file"
       - "traefik.http.routers.aw-rtr.service=aw-svc"
+
+  # Patched public leaderboard page (ignores zero-input time). Source: build/aw/leaderboard (original in build/aw/leaderboard-orig).
+  # aw-server-rust embeds its web assets, so the page can't be overridden inside the aw container.
+  aw-leaderboard:
+    image: nginx:alpine
+    container_name: aw-leaderboard
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    profiles: ["infra", "all"]
+    networks:
+      t3_proxy:
+    volumes:
+      - $DOCKERDIR/build/aw/leaderboard:/usr/share/nginx/html/static/leaderboard:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.aw-leaderboard-svc.loadbalancer.server.port=80"
