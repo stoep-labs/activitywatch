@@ -67,12 +67,22 @@ else
   sudo cp "${COMPOSE_SRC}" "${COMPOSE_TARGET}"
 fi
 
+# Patched public leaderboard page, served by the aw-leaderboard nginx container
+# (aw-server-rust embeds its web assets, so it cannot be overridden inside the aw container).
+LB_SRC="${REPO_ROOT}/compose/stoep/leaderboard"
+LB_TARGET="${DOCKERDIR}/build/aw/leaderboard"
+echo "=== Copying leaderboard page to ${LB_TARGET} ==="
+mkdir -p "${LB_TARGET}" 2>/dev/null || sudo mkdir -p "${LB_TARGET}"
+if ! cp -f "${LB_SRC}"/* "${LB_TARGET}/" 2>/dev/null; then
+  sudo cp -f "${LB_SRC}"/* "${LB_TARGET}/"
+fi
+
 ensure_stoep_include "${STOEP_INCLUDE}"
 
 echo "=== Deploying aw (image already built/pushed; no compose build) ==="
 COMPOSE=(sudo docker compose --profile all --env-file "${STOEP_ENV}" -f "${STOEP_COMPOSE}")
-# Recreate only the aw service from the registry image. Data/config volumes are preserved.
-"${COMPOSE[@]}" up -d --no-build --remove-orphans --pull always aw
+# Recreate only the aw + aw-leaderboard services (aw from the registry image). Data/config volumes are preserved.
+"${COMPOSE[@]}" up -d --no-build --remove-orphans --pull always aw aw-leaderboard
 
 echo "=== Recent logs ==="
 "${COMPOSE[@]}" logs --tail=50 aw || true
