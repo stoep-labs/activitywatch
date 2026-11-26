@@ -265,7 +265,8 @@ dist/$(APP_BUNDLE).dmg: dist/$(APP_BUNDLE).app
 dist/notarize:
 	./scripts/notarize.sh
 
-package:
+# Build dist/activitywatch only. CI signs the binaries between this and package-all.sh.
+package-stage:
 	rm -rf dist
 	mkdir -p dist/activitywatch
 	for dir in $(PACKAGEABLES); do \
@@ -314,6 +315,8 @@ endif
 	rm -f dist/activitywatch/libfreetype.so.6
 # Remove unnecessary files
 	rm -rf dist/activitywatch/pytz
+
+package: package-stage
 # Builds zips and setups
 	bash scripts/package/package-all.sh
 

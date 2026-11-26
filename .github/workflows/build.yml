@@ -19,6 +19,9 @@ jobs:
   build:
     name: ${{ matrix.os }}, py-${{ matrix.python_version }}, node-${{ matrix.node_version }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write  # only used for the optional Windows signing (OIDC login to Azure)
     env:
       AW_EXTRAS: true
       # All subprojects share one virtualenv; parallel installs race on it.
@@ -146,11 +149,62 @@ jobs:
           source venv/bin/activate || source venv/Scripts/activate
           make test-integration
 
+      # Windows code signing (Azure Artifact Signing). Off unless the repo variable
+      # AW_SIGNING is 'true' and this is a v* tag build, so normal builds are unchanged.
       - name: Package
+        if: ${{ !( runner.os == 'Windows' && vars.AW_SIGNING == 'true' && startsWith(github.ref, 'refs/tags/v') ) }}
         run: |
           source venv/bin/activate || source venv/Scripts/activate
           poetry install  # run again to ensure we have the correct version of PyInstaller
           make package
+
+      - name: Package (stage, to be signed)
+        if: ${{ runner.os == 'Windows' && vars.AW_SIGNING == 'true' && startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          source venv/bin/activate || source venv/Scripts/activate
+          poetry install
+          make package-stage
+
+      - name: Azure login (OIDC)
+        if: ${{ runner.os == 'Windows' && vars.AW_SIGNING == 'true' && startsWith(github.ref, 'refs/tags/v') }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign binaries
+        if: ${{ runner.os == 'Windows' && vars.AW_SIGNING == 'true' && startsWith(github.ref, 'refs/tags/v') }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AW_SIGN_ENDPOINT }}
+          signing-account-name: ${{ vars.AW_SIGN_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AW_SIGN_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\activitywatch
+          files-folder-filter: exe,dll,pyd
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Package (zip and installer from signed files)
+        if: ${{ runner.os == 'Windows' && vars.AW_SIGNING == 'true' && startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          source venv/bin/activate || source venv/Scripts/activate
+          bash scripts/package/package-all.sh
+
+      - name: Sign installer
+        if: ${{ runner.os == 'Windows' && vars.AW_SIGNING == 'true' && startsWith(github.ref, 'refs/tags/v') }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AW_SIGN_ENDPOINT }}
+          signing-account-name: ${{ vars.AW_SIGN_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AW_SIGN_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
 
       - name: Host-ABI gate - verify no host system libraries are bundled
         if: startsWith(runner.os, 'linux')
